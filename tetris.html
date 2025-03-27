@@ -149,9 +149,63 @@
         let clearAnimationStep = 0;
 
         function initializeGame() {
+            // ゲーム状態の完全リセット
             board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
-            spawnNewPiece();
+            score = 0;
+            level = 1;
+            clearingLines = [];
+
+            // タイマーの完全クリア
+            if (gameLoop) {
+                clearInterval(gameLoop);
+                gameLoop = null;
+            }
+            if (clearAnimation) {
+                clearInterval(clearAnimation);
+                clearAnimation = null;
+            }
+            if (autoPlayInterval) {
+                clearInterval(autoPlayInterval);
+                autoPlayInterval = null;
+            }
+
+            // UI表示をリセット
+            lineClearInfo.style.display = 'none';
             updateGameInfo();
+
+            // 新しいピースの生成
+            currentPiece = null;
+            spawnNewPiece();
+
+            // ゲームループの再開始
+            gameLoop = setInterval(() => {
+                // ライン消去アニメーション中は落下を一時停止
+                if (clearingLines.length > 0) {
+                    return;
+                }
+
+                if (canMove(0, 1)) {
+                    currentPiece.y++;
+                } else {
+                    mergePiece();
+                    checkLines();
+                    // アニメーション中でなければ次のピースを生成
+                    if (clearingLines.length === 0) {
+                        spawnNewPiece();
+                    }
+                }
+                drawBoard();
+                drawPiece();
+            }, 1000 / (level * 1.5));
+
+            // 自動操作モードを継続する場合
+            if (isAutoPlay && !autoPlayInterval) {
+                autoPlayInterval = setInterval(executeAutoPlay, 500);
+            }
+
+            // 画面を再描画
+            drawBoard();
+            drawPiece();
         }
 
         function spawnNewPiece() {
@@ -392,7 +446,11 @@
         }
 
         function gameOver() {
-            clearInterval(gameLoop);
+            // 全てのタイマーを停止
+            if (gameLoop) {
+                clearInterval(gameLoop);
+                gameLoop = null;
+            }
             if (autoPlayInterval) {
                 clearInterval(autoPlayInterval);
                 autoPlayInterval = null;
@@ -402,8 +460,14 @@
                 clearAnimation = null;
                 lineClearInfo.style.display = 'none';
             }
+
+            // ゲームオーバーメッセージ表示
             alert(`ゲームオーバー！ スコア: ${score}`);
-            initializeGame();
+
+            // ゲームを完全にリセットして新しいゲームを開始
+            setTimeout(() => {
+                initializeGame();
+            }, 100); // 少し遅延を入れて状態が確実にクリアされるようにする
         }
 
         // ハードドロップ関数（一気に落下）
@@ -805,27 +869,8 @@
         // 自動操作ボタンイベント
         document.getElementById('auto-play').addEventListener('click', toggleAutoPlay);
 
-        // ゲームループの開始
+        // 初回のゲーム開始
         initializeGame();
-        gameLoop = setInterval(() => {
-            // ライン消去アニメーション中は落下を一時停止
-            if (clearingLines.length > 0) {
-                return;
-            }
-
-            if (canMove(0, 1)) {
-                currentPiece.y++;
-            } else {
-                mergePiece();
-                checkLines();
-                // アニメーション中でなければ次のピースを生成
-                if (clearingLines.length === 0) {
-                    spawnNewPiece();
-                }
-            }
-            drawBoard();
-            drawPiece();
-        }, 1000 / (level * 1.5));
 
     </script>
 </body>
