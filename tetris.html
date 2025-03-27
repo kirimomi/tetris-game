@@ -30,10 +30,24 @@
             background: #333;
             padding: 20px;
             border-radius: 5px;
+            width: 250px;
+            height: 600px;
+            display: flex;
+            flex-direction: column;
         }
 
-        .info-item {
+        .info-header {
             margin-bottom: 15px;
+        }
+
+        .info-spacer {
+            flex-grow: 1;
+            /* 空白部分を拡張してヘッダーとフッターを押し出す */
+        }
+
+        .info-footer {
+            /* フッターは自動操作ボタンと操作説明の両方を含む */
+            margin-top: auto;
         }
 
         button {
@@ -66,21 +80,20 @@
     <div id="game-container">
         <canvas id="game-board" width="300" height="600"></canvas>
         <div id="game-info">
-            <div class="info-item">
+            <div class="info-header">
                 <h2>スコア: <span id="score">0</span></h2>
                 <h2>レベル: <span id="level">1</span></h2>
                 <div id="line-clear-info" style="color: #FFD700; font-weight: bold; display: none;">ライン消去中!</div>
             </div>
-            <div class="info-item">
-                <h3>操作説明</h3>
+            <div class="info-spacer"></div>
+            <div class="info-footer">
+                <button id="auto-play">自動操作: オフ</button>
+                <h3 style="margin-top: 15px;">操作説明</h3>
                 <p>←→: 移動<br>
                     ↓: 高速落下<br>
                     ↑: 一気に落下<br>
                     スペース: 回転<br>
                     A: 自動操作切替</p>
-            </div>
-            <div class="info-item">
-                <button id="auto-play">自動操作: オフ</button>
             </div>
         </div>
     </div>
