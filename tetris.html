@@ -354,16 +354,50 @@
         function evaluateBoard(simulatedBoard) {
             let score = 0;
 
-            // 1. 完成したラインの数
+            // 1. 完成したラインの数（テトリス消しを特に高く評価）
             let completedLines = 0;
+            let consecutiveLines = 0;
+            let lastLineComplete = false;
+
             for (let y = 0; y < BOARD_HEIGHT; y++) {
                 if (simulatedBoard[y].every(cell => cell)) {
                     completedLines++;
+
+                    if (lastLineComplete) {
+                        consecutiveLines++;
+                    } else {
+                        consecutiveLines = 1;
+                    }
+
+                    lastLineComplete = true;
+                } else {
+                    lastLineComplete = false;
                 }
             }
-            score += completedLines * 100; // ラインを消すことを高く評価
 
-            // 2. 穴の数（上にブロックがあり下が空いているマス）
+            // テトリス（4ライン消し）に大きなボーナス
+            if (consecutiveLines === 4) {
+                score += 800; // テトリス消しは非常に高く評価
+            } else if (consecutiveLines === 3) {
+                score += 300;
+            } else if (consecutiveLines === 2) {
+                score += 150;
+            } else {
+                score += completedLines * 100;
+            }
+
+            // 2. テトリス消し準備状態の評価
+            // フィールドの両端を高く、中央を低くする「井戸」状態を評価
+            const wellFormed = evaluateWellFormation(simulatedBoard);
+            score += wellFormed * 50;
+
+            // 3. I型ピース（棒）のための余地を確保
+            const hasWellForI = hasWellForIBlock(simulatedBoard);
+            if (hasWellForI) {
+                score += 200; // I型用の井戸があると高評価
+            }
+
+            // 4. 穴の数（上にブロックがあり下が空いているマス）
             let holes = 0;
             for (let x = 0; x < BOARD_WIDTH; x++) {
                 let blockFound = false;
@@ -375,9 +409,9 @@
                     }
                 }
             }
-            score -= holes * 30; // 穴を作ることを低く評価
+            score -= holes * 40; // 穴を作ることをさらに低く評価
 
-            // 3. 高さの合計（低いほうが良い）
+            // 5. 高さの合計（低いほうが良い）
             let totalHeight = 0;
             for (let x = 0; x < BOARD_WIDTH; x++) {
                 for (let y = 0; y < BOARD_HEIGHT; y++) {
@@ -389,7 +423,7 @@
             }
             score -= totalHeight * 2; // 高さを低く評価
 
-            // 4. 高さの差（なるべく均等に）
+            // 6. 高さの差（中央と両端で異なるパターンを評価）
             let heights = [];
             for (let x = 0; x < BOARD_WIDTH; x++) {
                 let height = BOARD_HEIGHT;
@@ -402,13 +436,100 @@
                 heights.push(height);
             }
 
+            // バランスを取りつつも、テトリス消しのための配置も考慮
             let heightDiff = 0;
             for (let i = 0; i < heights.length - 1; i++) {
-                heightDiff += Math.abs(heights[i] - heights[i + 1]);
+                // I型ピース用の井戸である場合は、その部分の高さ差は評価から除外
+                if (!(Math.abs(heights[i] - heights[i + 1]) >= 3 &&
+                    (i === 0 || i === heights.length - 2))) {
+                    heightDiff += Math.abs(heights[i] - heights[i + 1]);
+                }
             }
-            score -= heightDiff * 5; // 高さの差を低く評価
+            score -= heightDiff * 5; // 高さの差を低く評価（ただしI型用の井戸は例外）
 
             return score;
+        }
+
+        // I型ピース（棒）のための井戸があるかチェック
+        function hasWellForIBlock(simulatedBoard) {
+            // 左右の端に高さ4以上の井戸があるか確認
+            const heights = [];
+            for (let x = 0; x < BOARD_WIDTH; x++) {
+                let height = BOARD_HEIGHT;
+                for (let y = 0; y < BOARD_HEIGHT; y++) {
+                    if (simulatedBoard[y][x]) {
+                        height = y;
+                        break;
+                    }
+                }
+                heights.push(height);
+            }
+
+            // 左端のチェック
+            if (heights[0] <= BOARD_HEIGHT - 4 &&
+                heights[1] >= heights[0] + 3) {
+                return true;
+            }
+
+            // 右端のチェック
+            if (heights[BOARD_WIDTH - 1] <= BOARD_HEIGHT - 4 &&
+                heights[BOARD_WIDTH - 2] >= heights[BOARD_WIDTH - 1] + 3) {
+                return true;
+            }
+
+            // その他の列に適切な井戸があるかチェック
+            for (let x = 1; x < BOARD_WIDTH - 1; x++) {
+                if (heights[x] <= BOARD_HEIGHT - 4 &&
+                    heights[x - 1] >= heights[x] + 3 &&
+                    heights[x + 1] >= heights[x] + 3) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // テトリス消し（4ライン）に適した井戸形成の評価
+        function evaluateWellFormation(simulatedBoard) {
+            let wellScore = 0;
+
+            // フィールドの形状を評価
+            const heights = [];
+            for (let x = 0; x < BOARD_WIDTH; x++) {
+                let height = BOARD_HEIGHT;
+                for (let y = 0; y < BOARD_HEIGHT; y++) {
+                    if (simulatedBoard[y][x]) {
+                        height = y;
+                        break;
+                    }
+                }
+                heights.push(height);
+            }
+
+            // 左端が低く、右端に向かって高くなる形状、もしくはその逆を評価
+            let increasingTrend = true;
+            let decreasingTrend = true;
+
+            for (let i = 1; i < heights.length; i++) {
+                if (heights[i] > heights[i - 1]) {
+                    increasingTrend = false;
+                }
+                if (heights[i] < heights[i - 1]) {
+                    decreasingTrend = false;
+                }
+            }
+
+            if (increasingTrend || decreasingTrend) {
+                wellScore += 20;
+            }
+
+            // 左右どちらかの端に棒用の溝があるかチェック
+            if (heights[0] >= 4 + heights[1] ||
+                heights[BOARD_WIDTH - 1] >= 4 + heights[BOARD_WIDTH - 2]) {
+                wellScore += 30;
+            }
+
+            return wellScore;
         }
 
         // 自動操作の実行
