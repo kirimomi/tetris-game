@@ -75,6 +75,7 @@
                 <h3>操作説明</h3>
                 <p>←→: 移動<br>
                     ↓: 高速落下<br>
+                    ↑: 一気に落下<br>
                     スペース: 回転<br>
                     A: 自動操作切替</p>
             </div>
@@ -405,6 +406,28 @@
             initializeGame();
         }
 
+        // ハードドロップ関数（一気に落下）
+        function hardDrop() {
+            // ライン消去アニメーション中や自動操作中は実行しない
+            if (clearingLines.length > 0 || !currentPiece) return;
+
+            // 一番下まで落とす
+            while (canMove(0, 1)) {
+                currentPiece.y++;
+            }
+
+            // 接地後の処理
+            mergePiece();
+            checkLines();
+            // アニメーション中でなければ次のピースを生成
+            if (clearingLines.length === 0) {
+                spawnNewPiece();
+            }
+
+            drawBoard();
+            drawPiece();
+        }
+
         // 自動操作用関数
         function getAutoPilotMove() {
             // 全ての可能な配置（回転×位置）をシミュレーションして評価
@@ -666,18 +689,8 @@
                     currentPiece.x--;
                 } else {
                     clearInterval(moveInterval);
-                    // 一番下まで落とす
-                    while (canMove(0, 1)) {
-                        currentPiece.y++;
-                    }
-                    mergePiece();
-                    checkLines();
-                    // アニメーション中でなければ次のピースを生成
-                    if (clearingLines.length === 0) {
-                        spawnNewPiece();
-                    }
-                    drawBoard();
-                    drawPiece();
+                    // ハードドロップを実行
+                    hardDrop();
                 }
                 drawBoard();
                 drawPiece();
@@ -731,6 +744,10 @@
                         handleMove(event.key);
                         keys[event.key] = true;
                     }
+                    event.preventDefault();
+                    break;
+                case 'ArrowUp': // 上矢印キーでハードドロップ
+                    hardDrop();
                     event.preventDefault();
                     break;
                 case ' ':
