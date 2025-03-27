@@ -69,6 +69,7 @@
             <div class="info-item">
                 <h2>スコア: <span id="score">0</span></h2>
                 <h2>レベル: <span id="level">1</span></h2>
+                <div id="line-clear-info" style="color: #FFD700; font-weight: bold; display: none;">ライン消去中!</div>
             </div>
             <div class="info-item">
                 <h3>操作説明</h3>
@@ -89,6 +90,7 @@
         const BLOCK_SIZE = 30;
         const BOARD_WIDTH = 10;
         const BOARD_HEIGHT = 20;
+        const lineClearInfo = document.getElementById('line-clear-info');
 
         // テトロミノの形状と色
         const TETROMINOES = [
@@ -120,6 +122,16 @@
                 shape: [[0, 0, 1], [1, 1, 1]], // L型
                 color: '#ffa500'
             }
+        ];
+
+        // 色エフェクト用の色配列
+        const FLASH_COLORS = [
+            '#FFFFFF', // 白
+            '#FF0000', // 赤
+            '#FFFF00', // 黄
+            '#00FF00', // 緑
+            '#0000FF', // 青
+            '#FF00FF'  // マゼンタ
         ];
 
         let board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
@@ -160,8 +172,8 @@
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // グリッドラインを描画（オプション）
-            ctx.strokeStyle = '#111';
+            // グリッドラインを描画
+            ctx.strokeStyle = '#222';
             for (let x = 0; x <= BOARD_WIDTH; x++) {
                 ctx.beginPath();
                 ctx.moveTo(x * BLOCK_SIZE, 0);
@@ -176,7 +188,7 @@
             }
 
             // ゴーストピースの描画
-            if (currentPiece) {
+            if (currentPiece && !clearingLines.length) {
                 const ghostPiece = calculateGhostPosition();
                 ctx.globalAlpha = 0.2;
                 ctx.fillStyle = ghostPiece.color;
@@ -199,6 +211,11 @@
             for (let y = 0; y < BOARD_HEIGHT; y++) {
                 for (let x = 0; x < BOARD_WIDTH; x++) {
                     if (board[y][x]) {
+                        // ライン消去アニメーション中の行は描画しない（アニメーション関数で別途描画）
+                        if (clearingLines.includes(y)) {
+                            continue;
+                        }
+
                         ctx.fillStyle = board[y][x];
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
                     }
@@ -235,6 +252,8 @@
         }
 
         function drawPiece() {
+            if (!currentPiece || clearingLines.length > 0) return;
+
             ctx.fillStyle = currentPiece.color;
             currentPiece.shape.forEach((row, y) => {
                 row.forEach((value, x) => {
@@ -287,28 +306,42 @@
             if (clearingLines.length > 0) {
                 clearAnimationStep = 0;
                 if (clearAnimation) clearInterval(clearAnimation);
-                clearAnimation = setInterval(animateClearLines, 50);
+
+                // UI表示を更新
+                lineClearInfo.style.display = 'block';
+                lineClearInfo.textContent = `${clearingLines.length}ライン消去中!`;
+
+                // アニメーション開始
+                clearAnimation = setInterval(animateClearLines, 100);
                 return; // アニメーション中は次のピース生成を待機
             }
         }
 
         // ライン消去アニメーション
         function animateClearLines() {
+            // アニメーションステップを進める
             clearAnimationStep++;
 
-            // 点滅エフェクト（5ステップ）
-            if (clearAnimationStep <= 5) {
-                const isVisible = clearAnimationStep % 2 === 0;
+            // 全体の盤面を描画
+            drawBoard();
 
-                // 対象ラインを点滅表示
+            // アニメーション効果（10ステップ）
+            if (clearAnimationStep <= 10) {
+                // 点滅色を決定（ステップごとに色を切り替え）
+                const colorIndex = (clearAnimationStep - 1) % FLASH_COLORS.length;
+                const flashColor = FLASH_COLORS[colorIndex];
+
+                // 消去対象のラインをカラフルに点滅表示
                 clearingLines.forEach(y => {
                     for (let x = 0; x < BOARD_WIDTH; x++) {
-                        if (isVisible) {
-                            ctx.fillStyle = '#FFFFFF';
-                        } else {
-                            ctx.fillStyle = '#000000';
-                        }
-                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+                        ctx.fillStyle = flashColor;
+                        // ブロックサイズを少し大きくして目立たせる
+                        ctx.fillRect(
+                            x * BLOCK_SIZE,
+                            y * BLOCK_SIZE,
+                            BLOCK_SIZE,
+                            BLOCK_SIZE
+                        );
                     }
                 });
             } else {
@@ -316,9 +349,19 @@
                 clearInterval(clearAnimation);
                 clearAnimation = null;
 
-                // 消したライン数に応じてスコア加算
+                // UI表示を更新
+                lineClearInfo.style.display = 'none';
+
+                // 消したライン数に応じてスコア加算（テトリスは高得点）
                 let linesCleared = clearingLines.length;
-                score += linesCleared * 100 * level;
+                let lineBonus = 0;
+
+                if (linesCleared === 1) lineBonus = 100;
+                else if (linesCleared === 2) lineBonus = 300;
+                else if (linesCleared === 3) lineBonus = 500;
+                else if (linesCleared === 4) lineBonus = 800; // テトリス
+
+                score += lineBonus * level;
                 level = Math.floor(score / 1000) + 1;
                 updateGameInfo();
 
@@ -338,8 +381,7 @@
                 spawnNewPiece();
             }
 
-            // 盤面を再描画
-            drawBoard();
+            // 現在のピースを描画
             drawPiece();
         }
 
@@ -357,6 +399,7 @@
             if (clearAnimation) {
                 clearInterval(clearAnimation);
                 clearAnimation = null;
+                lineClearInfo.style.display = 'none';
             }
             alert(`ゲームオーバー！ スコア: ${score}`);
             initializeGame();
@@ -605,7 +648,7 @@
 
         // 自動操作の実行
         function executeAutoPlay() {
-            if (!isAutoPlay || !currentPiece) return;
+            if (!isAutoPlay || !currentPiece || clearingLines.length > 0) return;
 
             const move = getAutoPilotMove();
 
@@ -674,6 +717,12 @@
                 return;
             }
 
+            // ライン消去アニメーション中は操作を無効化
+            if (clearingLines.length > 0) {
+                event.preventDefault();
+                return;
+            }
+
             switch (event.key) {
                 case 'ArrowLeft':
                 case 'ArrowRight':
@@ -710,6 +759,9 @@
 
         // 移動処理用インターバル
         setInterval(() => {
+            // ライン消去アニメーション中は移動を無効化
+            if (clearingLines.length > 0) return;
+
             Object.entries(keys).forEach(([key, isPressed]) => {
                 if (isPressed) {
                     handleMove(key);
@@ -739,6 +791,11 @@
         // ゲームループの開始
         initializeGame();
         gameLoop = setInterval(() => {
+            // ライン消去アニメーション中は落下を一時停止
+            if (clearingLines.length > 0) {
+                return;
+            }
+
             if (canMove(0, 1)) {
                 currentPiece.y++;
             } else {
