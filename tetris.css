@@ -1,0 +1,68 @@
+body {
+    background: #1a1a1a;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    font-family: Arial, sans-serif;
+    color: white;
+}
+
+#game-container {
+    display: flex;
+    gap: 20px;
+}
+
+#game-board {
+    border: 2px solid #333;
+    background: #000;
+}
+
+#game-info {
+    background: #333;
+    padding: 20px;
+    border-radius: 5px;
+    width: 250px;
+    height: 600px;
+    display: flex;
+    flex-direction: column;
+}
+
+.info-header {
+    margin-bottom: 15px;
+}
+
+.info-spacer {
+    flex-grow: 1;
+    /* 空白部分を拡張してヘッダーとフッターを押し出す */
+}
+
+.info-footer {
+    /* フッターは自動操作ボタンと操作説明の両方を含む */
+    margin-top: auto;
+}
+
+button {
+    background-color: #4CAF50;
+    border: none;
+    color: white;
+    padding: 10px 15px;
+    text-align: center;
+    font-size: 16px;
+    margin: 4px 2px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+button:hover {
+    background-color: #45a049;
+}
+
+.active {
+    background-color: #f44336;
+}
+
+.active:hover {
+    background-color: #d32f2f;
+}
