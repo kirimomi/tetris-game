@@ -338,7 +338,7 @@
                     });
 
                     // 評価関数
-                    const score = evaluateBoard(simBoard);
+                    const score = evaluateBoard(simBoard, movedPiece);
 
                     if (score > bestScore) {
                         bestScore = score;
@@ -351,46 +351,100 @@
         }
 
         // 盤面の評価関数
-        function evaluateBoard(simulatedBoard) {
+        function evaluateBoard(simulatedBoard, placedPiece) {
             let score = 0;
 
             // 1. 完成したラインの数
             let completedLines = 0;
+            let consecutiveLines = 0;
+            let lastLineComplete = false;
+
             for (let y = 0; y < BOARD_HEIGHT; y++) {
                 if (simulatedBoard[y].every(cell => cell)) {
                     completedLines++;
+
+                    if (lastLineComplete) {
+                        consecutiveLines++;
+                    } else {
+                        consecutiveLines = 1;
+                    }
+
+                    lastLineComplete = true;
+                } else {
+                    lastLineComplete = false;
                 }
             }
-            score += completedLines * 100; // ラインを消すことを高く評価
 
-            // 2. 穴の数（上にブロックがあり下が空いているマス）
+            // テトリス（4ライン消し）にボーナス
+            if (consecutiveLines === 4) {
+                score += 600; // テトリス消しは高く評価
+            } else if (consecutiveLines === 3) {
+                score += 300;
+            } else if (consecutiveLines === 2) {
+                score += 200;
+            } else {
+                score += completedLines * 100;
+            }
+
+            // 2. 隙間と穴の評価（より厳しく）
             let holes = 0;
+            let adjacentHoles = 0;
+            let holeDepth = 0;
+            let blocksAboveHoles = 0;
+
+            // 各列のブロック分布を計算
+            let columnBlocks = Array(BOARD_WIDTH).fill(0);
+            let columnHoles = Array(BOARD_WIDTH).fill(0);
+            let columnDepths = Array(BOARD_WIDTH).fill(0);
+
             for (let x = 0; x < BOARD_WIDTH; x++) {
                 let blockFound = false;
+                let columnDepth = 0;
+
                 for (let y = 0; y < BOARD_HEIGHT; y++) {
                     if (simulatedBoard[y][x]) {
                         blockFound = true;
+                        columnBlocks[x]++;
                     } else if (blockFound) {
                         holes++;
+                        columnHoles[x]++;
+                        columnDepth++;
+
+                        // 穴の上にあるブロック数
+                        for (let above = 0; above < y; above++) {
+                            if (simulatedBoard[above][x]) {
+                                blocksAboveHoles++;
+                            }
+                        }
                     }
                 }
-            }
-            score -= holes * 30; // 穴を作ることを低く評価
 
-            // 3. 高さの合計（低いほうが良い）
-            let totalHeight = 0;
+                columnDepths[x] = columnDepth;
+            }
+
+            // 隣接する穴のペナルティ
+            for (let x = 0; x < BOARD_WIDTH - 1; x++) {
+                if (columnHoles[x] > 0 && columnHoles[x + 1] > 0) {
+                    adjacentHoles += Math.min(columnHoles[x], columnHoles[x + 1]);
+                }
+            }
+
+            // 深い穴のペナルティ
             for (let x = 0; x < BOARD_WIDTH; x++) {
-                for (let y = 0; y < BOARD_HEIGHT; y++) {
-                    if (simulatedBoard[y][x]) {
-                        totalHeight += BOARD_HEIGHT - y;
-                        break;
-                    }
-                }
+                holeDepth += columnDepths[x];
             }
-            score -= totalHeight * 2; // 高さを低く評価
 
-            // 4. 高さの差（なるべく均等に）
+            // 穴と隙間への大きなペナルティ
+            score -= holes * 60;
+            score -= adjacentHoles * 30;
+            score -= holeDepth * 20;
+            score -= blocksAboveHoles * 15;
+
+            // 3. 高さの評価（低く安定した状態を優先）
             let heights = [];
+            let totalHeight = 0;
+            let maxHeight = 0;
+
             for (let x = 0; x < BOARD_WIDTH; x++) {
                 let height = BOARD_HEIGHT;
                 for (let y = 0; y < BOARD_HEIGHT; y++) {
@@ -400,13 +454,74 @@
                     }
                 }
                 heights.push(height);
+                totalHeight += (BOARD_HEIGHT - height);
+                maxHeight = Math.max(maxHeight, BOARD_HEIGHT - height);
             }
 
+            // 高さに比例したペナルティ
+            score -= totalHeight * 5;
+
+            // 最大高さへのペナルティ（高すぎるとゲームオーバーリスク）
+            score -= Math.pow(maxHeight, 1.5) * 4;
+
+            // 4. バランスと効率的な積み方の評価
             let heightDiff = 0;
             for (let i = 0; i < heights.length - 1; i++) {
                 heightDiff += Math.abs(heights[i] - heights[i + 1]);
             }
-            score -= heightDiff * 5; // 高さの差を低く評価
+
+            // 高さの差に対するペナルティ
+            score -= heightDiff * 8;
+
+            // 5. 接地面の評価（隙間なく積まれているかどうか）
+            let surfaceSmoothnessScore = 0;
+            for (let x = 0; x < BOARD_WIDTH; x++) {
+                let blockCount = 0;
+
+                // 配置されるピースの各ブロックがどれだけ既存のブロックに接するか
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (dx === 0 && dy === 0) continue;
+
+                        let nx = x + dx;
+                        let ny = heights[x] + dy;
+
+                        if (nx >= 0 && nx < BOARD_WIDTH && ny >= 0 && ny < BOARD_HEIGHT) {
+                            if (simulatedBoard[ny][nx]) {
+                                blockCount++;
+                            }
+                        }
+                    }
+                }
+
+                surfaceSmoothnessScore += blockCount;
+            }
+
+            score += surfaceSmoothnessScore * 5;
+
+            // 6. 特殊な配置のボーナス
+            // I型ピースによる4ライン消しの可能性
+            const isIBlock = placedPiece && placedPiece.shape.length === 1 && placedPiece.shape[0].length === 4;
+
+            if (completedLines === 4 && isIBlock) {
+                score += 200; // I型で4ライン消しした場合の特別ボーナス
+            }
+
+            // 端が高く中央が低い「盆地」形状を少し評価
+            let wellShapedScore = 0;
+            if (heights[0] < heights[1] && heights[BOARD_WIDTH - 1] < heights[BOARD_WIDTH - 2]) {
+                let centerHeightAvg = 0;
+                for (let i = 2; i < BOARD_WIDTH - 2; i++) {
+                    centerHeightAvg += heights[i];
+                }
+                centerHeightAvg /= (BOARD_WIDTH - 4);
+
+                if (centerHeightAvg > heights[0] && centerHeightAvg > heights[BOARD_WIDTH - 1]) {
+                    wellShapedScore = 50;
+                }
+            }
+
+            score += wellShapedScore;
 
             return score;
         }
