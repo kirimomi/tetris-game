@@ -130,6 +130,11 @@
         let isAutoPlay = false;
         let autoPlayInterval = null;
 
+        // ラインが消える演出用の変数
+        let clearingLines = [];
+        let clearAnimation = null;
+        let clearAnimationStep = 0;
+
         function initializeGame() {
             board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
             spawnNewPiece();
@@ -151,8 +156,24 @@
         }
 
         function drawBoard() {
+            // 背景を描画
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // グリッドラインを描画（オプション）
+            ctx.strokeStyle = '#111';
+            for (let x = 0; x <= BOARD_WIDTH; x++) {
+                ctx.beginPath();
+                ctx.moveTo(x * BLOCK_SIZE, 0);
+                ctx.lineTo(x * BLOCK_SIZE, BOARD_HEIGHT * BLOCK_SIZE);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= BOARD_HEIGHT; y++) {
+                ctx.beginPath();
+                ctx.moveTo(0, y * BLOCK_SIZE);
+                ctx.lineTo(BOARD_WIDTH * BLOCK_SIZE, y * BLOCK_SIZE);
+                ctx.stroke();
+            }
 
             // ゴーストピースの描画
             if (currentPiece) {
@@ -252,22 +273,74 @@
         }
 
         function checkLines() {
-            let linesCleared = 0;
+            // 既にアニメーション中なら何もしない
+            if (clearingLines.length > 0) return;
 
+            // 消去対象のラインを検出
             for (let y = BOARD_HEIGHT - 1; y >= 0; y--) {
                 if (board[y].every(cell => cell)) {
-                    board.splice(y, 1);
-                    board.unshift(Array(BOARD_WIDTH).fill(0));
-                    linesCleared++;
-                    y++;
+                    clearingLines.push(y);
                 }
             }
 
-            if (linesCleared > 0) {
+            // 消去対象のラインがあればアニメーションを開始
+            if (clearingLines.length > 0) {
+                clearAnimationStep = 0;
+                if (clearAnimation) clearInterval(clearAnimation);
+                clearAnimation = setInterval(animateClearLines, 50);
+                return; // アニメーション中は次のピース生成を待機
+            }
+        }
+
+        // ライン消去アニメーション
+        function animateClearLines() {
+            clearAnimationStep++;
+
+            // 点滅エフェクト（5ステップ）
+            if (clearAnimationStep <= 5) {
+                const isVisible = clearAnimationStep % 2 === 0;
+
+                // 対象ラインを点滅表示
+                clearingLines.forEach(y => {
+                    for (let x = 0; x < BOARD_WIDTH; x++) {
+                        if (isVisible) {
+                            ctx.fillStyle = '#FFFFFF';
+                        } else {
+                            ctx.fillStyle = '#000000';
+                        }
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+                    }
+                });
+            } else {
+                // アニメーション終了、実際に消去処理を行う
+                clearInterval(clearAnimation);
+                clearAnimation = null;
+
+                // 消したライン数に応じてスコア加算
+                let linesCleared = clearingLines.length;
                 score += linesCleared * 100 * level;
                 level = Math.floor(score / 1000) + 1;
                 updateGameInfo();
+
+                // ラインを上から順に処理するためにソート
+                clearingLines.sort((a, b) => a - b);
+
+                // ラインを消去して上から詰める
+                clearingLines.forEach((lineY, i) => {
+                    // 既に消した行数を考慮して位置を調整
+                    const adjustedY = lineY + i;
+                    board.splice(adjustedY, 1);
+                    board.unshift(Array(BOARD_WIDTH).fill(0));
+                });
+
+                // 消去完了後、次のピースを生成
+                clearingLines = [];
+                spawnNewPiece();
             }
+
+            // 盤面を再描画
+            drawBoard();
+            drawPiece();
         }
 
         function updateGameInfo() {
@@ -280,6 +353,10 @@
             if (autoPlayInterval) {
                 clearInterval(autoPlayInterval);
                 autoPlayInterval = null;
+            }
+            if (clearAnimation) {
+                clearInterval(clearAnimation);
+                clearAnimation = null;
             }
             alert(`ゲームオーバー！ スコア: ${score}`);
             initializeGame();
@@ -552,7 +629,10 @@
                     }
                     mergePiece();
                     checkLines();
-                    spawnNewPiece();
+                    // アニメーション中でなければ次のピースを生成
+                    if (clearingLines.length === 0) {
+                        spawnNewPiece();
+                    }
                     drawBoard();
                     drawPiece();
                 }
@@ -664,7 +744,10 @@
             } else {
                 mergePiece();
                 checkLines();
-                spawnNewPiece();
+                // アニメーション中でなければ次のピースを生成
+                if (clearingLines.length === 0) {
+                    spawnNewPiece();
+                }
             }
             drawBoard();
             drawPiece();
