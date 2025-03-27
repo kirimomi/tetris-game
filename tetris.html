@@ -35,6 +35,30 @@
         .info-item {
             margin-bottom: 15px;
         }
+
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 15px;
+            text-align: center;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .active {
+            background-color: #f44336;
+        }
+
+        .active:hover {
+            background-color: #d32f2f;
+        }
     </style>
 </head>
 
@@ -50,7 +74,11 @@
                 <h3>操作説明</h3>
                 <p>←→: 移動<br>
                     ↓: 高速落下<br>
-                    スペース: 回転</p>
+                    スペース: 回転<br>
+                    A: 自動操作切替</p>
+            </div>
+            <div class="info-item">
+                <button id="auto-play">自動操作: オフ</button>
             </div>
         </div>
     </div>
@@ -99,6 +127,8 @@
         let score = 0;
         let level = 1;
         let gameLoop = null;
+        let isAutoPlay = false;
+        let autoPlayInterval = null;
 
         function initializeGame() {
             board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
@@ -247,8 +277,193 @@
 
         function gameOver() {
             clearInterval(gameLoop);
+            if (autoPlayInterval) {
+                clearInterval(autoPlayInterval);
+                autoPlayInterval = null;
+            }
             alert(`ゲームオーバー！ スコア: ${score}`);
             initializeGame();
+        }
+
+        // 自動操作用関数
+        function getAutoPilotMove() {
+            // 全ての可能な配置（回転×位置）をシミュレーションして評価
+            let bestScore = -Infinity;
+            let bestMove = { rotations: 0, translation: 0 };
+
+            // 最大4回の回転を試す
+            for (let rotations = 0; rotations < 4; rotations++) {
+                // 元のピースを複製
+                let testPiece = {
+                    ...currentPiece,
+                    shape: JSON.parse(JSON.stringify(currentPiece.shape))
+                };
+
+                // 試しに回転
+                for (let r = 0; r < rotations; r++) {
+                    const rotated = testPiece.shape[0].map((_, i) =>
+                        testPiece.shape.map(row => row[i]).reverse()
+                    );
+                    testPiece.shape = rotated;
+                }
+
+                // 左端から右端まで移動させてみる
+                for (let x = -testPiece.x; x < BOARD_WIDTH; x++) {
+                    // ピースを複製して移動
+                    let movedPiece = {
+                        ...testPiece,
+                        x: testPiece.x + x
+                    };
+
+                    // 移動可能かチェック
+                    if (!canMove(0, 0, movedPiece)) {
+                        continue;
+                    }
+
+                    // 一番下まで落とす
+                    let dropDistance = 0;
+                    while (canMove(0, dropDistance + 1, movedPiece)) {
+                        dropDistance++;
+                    }
+                    movedPiece.y += dropDistance;
+
+                    // 配置した結果をシミュレーション
+                    let simBoard = board.map(row => [...row]);
+                    movedPiece.shape.forEach((row, y) => {
+                        row.forEach((value, x) => {
+                            if (value && movedPiece.y + y < BOARD_HEIGHT) {
+                                simBoard[movedPiece.y + y][movedPiece.x + x] = movedPiece.color;
+                            }
+                        });
+                    });
+
+                    // 評価関数
+                    const score = evaluateBoard(simBoard);
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = { rotations, translation: x };
+                    }
+                }
+            }
+
+            return bestMove;
+        }
+
+        // 盤面の評価関数
+        function evaluateBoard(simulatedBoard) {
+            let score = 0;
+
+            // 1. 完成したラインの数
+            let completedLines = 0;
+            for (let y = 0; y < BOARD_HEIGHT; y++) {
+                if (simulatedBoard[y].every(cell => cell)) {
+                    completedLines++;
+                }
+            }
+            score += completedLines * 100; // ラインを消すことを高く評価
+
+            // 2. 穴の数（上にブロックがあり下が空いているマス）
+            let holes = 0;
+            for (let x = 0; x < BOARD_WIDTH; x++) {
+                let blockFound = false;
+                for (let y = 0; y < BOARD_HEIGHT; y++) {
+                    if (simulatedBoard[y][x]) {
+                        blockFound = true;
+                    } else if (blockFound) {
+                        holes++;
+                    }
+                }
+            }
+            score -= holes * 30; // 穴を作ることを低く評価
+
+            // 3. 高さの合計（低いほうが良い）
+            let totalHeight = 0;
+            for (let x = 0; x < BOARD_WIDTH; x++) {
+                for (let y = 0; y < BOARD_HEIGHT; y++) {
+                    if (simulatedBoard[y][x]) {
+                        totalHeight += BOARD_HEIGHT - y;
+                        break;
+                    }
+                }
+            }
+            score -= totalHeight * 2; // 高さを低く評価
+
+            // 4. 高さの差（なるべく均等に）
+            let heights = [];
+            for (let x = 0; x < BOARD_WIDTH; x++) {
+                let height = BOARD_HEIGHT;
+                for (let y = 0; y < BOARD_HEIGHT; y++) {
+                    if (simulatedBoard[y][x]) {
+                        height = y;
+                        break;
+                    }
+                }
+                heights.push(height);
+            }
+
+            let heightDiff = 0;
+            for (let i = 0; i < heights.length - 1; i++) {
+                heightDiff += Math.abs(heights[i] - heights[i + 1]);
+            }
+            score -= heightDiff * 5; // 高さの差を低く評価
+
+            return score;
+        }
+
+        // 自動操作の実行
+        function executeAutoPlay() {
+            if (!isAutoPlay || !currentPiece) return;
+
+            const move = getAutoPilotMove();
+
+            // 回転の実行
+            for (let i = 0; i < move.rotations; i++) {
+                rotatePiece();
+            }
+
+            // 左右移動の実行
+            const targetX = currentPiece.x + move.translation;
+            const moveInterval = setInterval(() => {
+                if (currentPiece.x < targetX && canMove(1, 0)) {
+                    currentPiece.x++;
+                } else if (currentPiece.x > targetX && canMove(-1, 0)) {
+                    currentPiece.x--;
+                } else {
+                    clearInterval(moveInterval);
+                    // 一番下まで落とす
+                    while (canMove(0, 1)) {
+                        currentPiece.y++;
+                    }
+                    mergePiece();
+                    checkLines();
+                    spawnNewPiece();
+                    drawBoard();
+                    drawPiece();
+                }
+                drawBoard();
+                drawPiece();
+            }, 50);
+        }
+
+        // 自動操作の切り替え
+        function toggleAutoPlay() {
+            isAutoPlay = !isAutoPlay;
+            const autoPlayButton = document.getElementById('auto-play');
+            autoPlayButton.textContent = `自動操作: ${isAutoPlay ? 'オン' : 'オフ'}`;
+
+            if (isAutoPlay) {
+                autoPlayButton.classList.add('active');
+                if (!autoPlayInterval) {
+                    autoPlayInterval = setInterval(executeAutoPlay, 500);
+                }
+            } else {
+                autoPlayButton.classList.remove('active');
+                if (autoPlayInterval) {
+                    clearInterval(autoPlayInterval);
+                    autoPlayInterval = null;
+                }
+            }
         }
 
         const keys = {
@@ -259,6 +474,11 @@
 
         // キー状態管理
         document.addEventListener('keydown', (event) => {
+            if (isAutoPlay && event.key !== 'a' && event.key !== 'A') {
+                event.preventDefault();
+                return;
+            }
+
             switch (event.key) {
                 case 'ArrowLeft':
                 case 'ArrowRight':
@@ -273,6 +493,11 @@
                     rotatePiece();
                     drawBoard();
                     drawPiece();
+                    event.preventDefault();
+                    break;
+                case 'a':
+                case 'A':
+                    toggleAutoPlay();
                     event.preventDefault();
                     break;
             }
@@ -312,6 +537,9 @@
             drawBoard();
             drawPiece();
         }
+
+        // 自動操作ボタンイベント
+        document.getElementById('auto-play').addEventListener('click', toggleAutoPlay);
 
         // ゲームループの開始
         initializeGame();
